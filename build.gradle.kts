@@ -74,6 +74,14 @@ dependencies {
 
 }
 
+fabricApi {
+    configureTests {
+        createSourceSet = true
+        modId = "shaderapi_test"
+        enableGameTests = false
+    }
+}
+
 tasks.processResources {
     inputs.property("version", project.version)
     inputs.property("minecraft_version", project.property("minecraft_version"))

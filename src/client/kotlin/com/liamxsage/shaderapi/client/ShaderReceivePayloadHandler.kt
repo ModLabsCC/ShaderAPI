@@ -10,10 +10,12 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.ConfirmScreen
 import net.minecraft.network.chat.Component
 import java.io.File
+import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URI
+import java.security.DigestInputStream
+import java.security.MessageDigest
 import java.util.*
-import kotlin.reflect.jvm.jvmName
 
 class ShaderReceivePayloadHandler : ClientPlayNetworking.PlayPayloadHandler<ShaderReceivePayload> {
     override fun receive(payload: ShaderReceivePayload, context: ClientPlayNetworking.Context) {
@@ -21,8 +23,20 @@ class ShaderReceivePayloadHandler : ClientPlayNetworking.PlayPayloadHandler<Shad
         val shaderUrl: String = payload.shaderUrl ?: return
         val shaderHash: String = payload.hash ?: return
         val serverGroup: String = payload.serverGroup.ifEmpty { "global" }
+        val decision = ConfigManager.getShaderPackAcceptState(serverGroup)
 
-        if (testForServerGroupAlwaysAccept(serverGroup)) {
+        if (decision == ShaderPackAcceptState.DENY) {
+            sendShaderStatusResponse(ShaderStatusResponse.DENIED)
+            return
+        }
+
+        if (!shaderHash.matches(Regex("[0-9a-fA-F]{40}"))) {
+            logger.warn("Shader pack hash is not a SHA-1 digest")
+            sendShaderStatusResponse(ShaderStatusResponse.DOWNLOAD_FAILED)
+            return
+        }
+
+        if (decision == ShaderPackAcceptState.ACCEPT) {
             downloadAndApplyShaderPack(shaderUrl, shaderHash)
             return
         }
@@ -45,19 +59,23 @@ class ShaderReceivePayloadHandler : ClientPlayNetworking.PlayPayloadHandler<Shad
         }
     }
 
-    private fun testForServerGroupAlwaysAccept(serverGroup: String): Boolean {
-        return ConfigManager.getShaderPackAcceptState(serverGroup) == ShaderPackAcceptState.ACCEPT
-    }
-
     private fun testForShaderPack(hash: String): Boolean {
         try {
             val file = File(Minecraft.getInstance().gameDirectory, "downloads/$hash.zip")
-            return file.exists()
+            if (!file.isFile) return false
+            if (hashMatches(file, hash)) return true
+            logger.warn("Cached shader pack has an incorrect SHA-1 digest")
+            file.delete()
         } catch (exception: Exception) {
-            exception.printStackTrace()
-            sendShaderStatusResponse(exception::class.jvmName.uppercase())
+            logger.warn("Could not validate cached shader pack", exception)
         }
         return false
+    }
+
+    private fun hashMatches(file: File, hash: String): Boolean {
+        val digest = MessageDigest.getInstance("SHA-1")
+        DigestInputStream(file.inputStream(), digest).use { it.copyTo(OutputStream.nullOutputStream()) }
+        return HexFormat.of().formatHex(digest.digest()).equals(hash, ignoreCase = true)
     }
 
     private fun downloadAndApplyShaderPack(url: String, shaderHash: String) {
@@ -100,30 +118,32 @@ class ShaderReceivePayloadHandler : ClientPlayNetworking.PlayPayloadHandler<Shad
     }
 
     private fun downloadShaderPack(url: String, hash: String): File? {
-        // Implementiere den Download des Shaderpacks von der URL und speichere es lokal ab
-        // Gib die Datei zurück, wenn der Download erfolgreich war, andernfalls null
+        var tmpFile: File? = null
+        var connection: HttpURLConnection? = null
         try {
             val minecraftClient = Minecraft.getInstance()
-            val tempUUID = UUID.randomUUID()
-            val tmpFile = File(minecraftClient.gameDirectory, "downloads/$tempUUID")
-            val urlConnection = URI(url).toURL().openConnection() as HttpURLConnection
-            urlConnection.connect()
-            urlConnection.inputStream.use { inputStream ->
+            val directory = File(minecraftClient.gameDirectory, "downloads")
+            if (!directory.isDirectory && !directory.mkdirs()) return null
+            tmpFile = File.createTempFile("shaderapi-", ".tmp", directory)
+            connection = URI(url).toURL().openConnection() as HttpURLConnection
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 30_000
+            connection.inputStream.use { inputStream ->
                 tmpFile.outputStream().use { outputStream ->
                     inputStream.copyTo(outputStream)
                 }
             }
-
-            val renamed = tmpFile.renameTo(File(minecraftClient.gameDirectory, "downloads/$hash.zip"))
-            return if (renamed) {
-                File(minecraftClient.gameDirectory, "downloads/$hash.zip")
-            } else {
-                sendShaderStatusResponse(ShaderStatusResponse.IO_EXCEPTION)
-                null
+            if (!hashMatches(tmpFile, hash)) {
+                logger.warn("Downloaded shader pack has an incorrect SHA-1 digest")
+                return null
             }
+            val destination = File(directory, "$hash.zip")
+            return if (tmpFile.renameTo(destination)) destination else null
         } catch (exception: Exception) {
-            exception.printStackTrace()
-            sendShaderStatusResponse(exception::class.jvmName.uppercase())
+            logger.warn("Could not download shader pack", exception)
+        } finally {
+            connection?.disconnect()
+            tmpFile?.delete()
         }
         return null
     }
