@@ -1,11 +1,10 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.dsl.jvm.JvmTargetValidationMode
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.util.*
 
 plugins {
-    kotlin("jvm") version "2.3.20"
-    id("net.fabricmc.fabric-loom") version "1.15.5"
+    kotlin("jvm") version "2.4.21"
+    id("net.fabricmc.fabric-loom") version "1.17.21"
     id("maven-publish")
 }
 
@@ -69,12 +68,17 @@ dependencies {
     // Fabric API. This is technically optional, but you probably want it anyway.
     implementation("net.fabricmc.fabric-api:fabric-api:${project.property("fabric_version")}")
 
+    testImplementation(platform("org.junit:junit-bom:5.13.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
 }
 
 tasks.processResources {
     inputs.property("version", project.version)
     inputs.property("minecraft_version", project.property("minecraft_version"))
     inputs.property("loader_version", project.property("loader_version"))
+    inputs.property("kotlin_loader_version", project.property("kotlin_loader_version"))
     filteringCharset = "UTF-8"
 
     filesMatching("fabric.mod.json") {
@@ -97,9 +101,11 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 tasks.withType<KotlinCompile>().configureEach {
-    // Temporary: Kotlin JVM target 25 may lag; keep Java on 25 and downgrade Kotlin bytecode target.
-    compilerOptions.jvmTarget.set(JvmTarget.JVM_24)
-    jvmTargetValidationMode.set(JvmTargetValidationMode.WARNING)
+    compilerOptions.jvmTarget.set(JvmTarget.JVM_25)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 tasks.jar {
