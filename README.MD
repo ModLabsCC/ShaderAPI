@@ -17,6 +17,8 @@ ShaderAPI disables its client integration when Iris is missing.
 
 Connect to a server implementing the ShaderAPI protocol. The client requests the server's shader pack and asks for approval before downloading and applying it. Acceptance is remembered by server group.
 
+Offers must provide a 40-digit SHA-1 hash; downloaded and cached packs are checked against it. Rejection is also remembered by server group. To change a saved decision, remove that group's entry from `config/shaderapi.json` while the game is closed.
+
 A server-side implementation for Paper is available in [ShaderAPI-Paper](https://github.com/Liams-Services/ShaderAPI-Paper). Client support for 26.3 does not establish compatibility of that separate server plugin.
 
 ## Building
