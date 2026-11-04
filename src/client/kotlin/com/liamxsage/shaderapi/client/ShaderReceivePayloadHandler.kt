@@ -29,15 +29,15 @@ class ShaderReceivePayloadHandler : ClientPlayNetworking.PlayPayloadHandler<Shad
 
         val client = context.client()
         client.execute {
-            client.setScreen(ConfirmScreen({ accept: Boolean ->
+            client.gui.setScreen(ConfirmScreen({ accept: Boolean ->
                 if (accept) {
                     downloadAndApplyShaderPack(shaderUrl, shaderHash)
-                    context.client().setScreen(null)
+                    context.client().gui.setScreen(null)
                     ConfigManager.addServerGroup(serverGroup, ShaderPackAcceptState.ACCEPT)
                     return@ConfirmScreen
                 }
 
-                context.client().setScreen(null)
+                context.client().gui.setScreen(null)
                 ConfigManager.addServerGroup(serverGroup, ShaderPackAcceptState.DENY)
                 sendShaderStatusResponse(ShaderStatusResponse.DENIED)
 
